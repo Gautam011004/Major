@@ -164,10 +164,59 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    // Get application details with student and project info
+    const applicationDetails = await prismaClient.application.findUnique({
+      where: { id: parseInt(applicationId) },
+      include: {
+        student: {
+          select: {
+            username: true,
+            fullname: true,
+          },
+        },
+        project: {
+          select: {
+            title: true,
+            professor: {
+              select: {
+                fullname: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!applicationDetails) {
+      return NextResponse.json(
+        { error: "Application not found" },
+        { status: 404 }
+      );
+    }
+
+    // Update application status
     const application = await prismaClient.application.update({
       where: { id: parseInt(applicationId) },
       data: { status },
     });
+
+    // Send email notification
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/send-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: applicationDetails.student.username,
+          studentName: applicationDetails.student.fullname,
+          projectTitle: applicationDetails.project.title,
+          professorName: applicationDetails.project.professor.fullname,
+          status: status,
+        }),
+      });
+    } catch (emailError) {
+      console.error("Error sending email:", emailError);
+      // Don't fail the request if email fails
+    }
 
     return NextResponse.json({
       message: "Application status updated",
